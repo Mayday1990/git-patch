@@ -1,0 +1,110 @@
+#!/bin/bash
+#set -exu
+
+root_dir=$(git rev-parse --show-toplevel)
+patches_dir="$root_dir/.git/patches"
+applied_patches_dir="$patches_dir/applied.d"
+
+git_patch_init() {
+    if [ ! -d "$patches_dir" ]; then
+        mkdir $patches_dir
+        mkdir $applied_patches_dir
+    fi
+}
+
+git_patch_list() {
+    git_patch_init
+    local ARGS=("$@")
+    if [[ " ${ARGS[*]} " =~ " --applied " ]]; then
+        git_patch_list_applied
+    elif [[ " ${ARGS[*]} " =~ " --not-applied " ]]; then
+        git_patch_list_not_applied
+    else
+        git_patch_list_all
+    fi
+}
+
+git_patch_list_all() {
+    ls -p $patches_dir | grep -v /
+}
+
+git_patch_list_applied() {
+    find $applied_patches_dir -type f -exec basename {} \;
+}
+
+git_patch_list_not_applied() {
+    if [ "$(ls -A $applied_patches_dir 2>/dev/null)" ]; then
+        ls -p $patches_dir 2>/dev/null | grep -v / | grep -v -w -e $(echo $(ls $applied_patches_dir) | awk -v OFS=" -e " '$1=$1')
+    else
+        git_patch_list_all
+    fi
+}
+
+git_patch_apply() {
+    for p in $@; do
+        git apply "${patches_dir}/${p}" && touch "${applied_patches_dir}/${p}"
+    done
+}
+
+git_patch_revert() {
+    for p in $@; do
+        git apply -R "${patches_dir}/${p}"
+        rm -f "${applied_patches_dir}/${p}"
+    done
+}
+
+git_patch_create() {
+    # TODO Check --name not in opts --> show usage
+    git_patch_init
+    local newparams=()
+    local ARGS=("$@")
+    local applyit=true
+    for ((index = 0; index < ${#ARGS[@]}; index++)); do
+        local param="${ARGS[index]}"
+        if [[ $param == '--name' ]]; then
+            local name="${ARGS[index + 1]}"
+            ((index++))
+        elif [[ $param == '--no-apply' ]]; then
+            applyit=false
+        else
+            newparams+=("$param")
+        fi
+    done
+    git diff "${newparams[@]}" >"${patches_dir}/${name}"
+    if $applyit; then
+        touch "${applied_patches_dir}/${name}"
+    fi
+}
+
+git_patch_rm() {
+    for p in $@; do
+        rm "${patches_dir}/${p}"
+        rm "${applied_patches_dir}/${p}"
+    done
+}
+
+git_patch_default() {
+    echo "usage: git patch <apply|create|list|revert|rm> [<args>]"
+}
+
+case $1 in
+"list")
+    git_patch_list ${@:2}
+    ;;
+"apply")
+    git_patch_apply ${@:2}
+    ;;
+"revert")
+    git_patch_revert ${@:2}
+    ;;
+"create")
+    git_patch_create ${@:2}
+    ;;
+"rm")
+    git_patch_rm ${@:2}
+    ;;
+*)
+    git_patch_default
+    ;;
+
+esac

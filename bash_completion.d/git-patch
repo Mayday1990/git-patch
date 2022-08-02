@@ -1,0 +1,114 @@
+__git_patch__get_root_dir() {
+    git rev-parse --show-toplevel
+}
+
+__git_patch__ls_only_files() {
+    ls -p $1 2>/dev/null | grep -v /
+}
+
+__git_patch__exclude() {
+    grep -v -w -e $(echo $@ | awk -v OFS=" -e " '$1=$1')
+}
+
+__git_patch__show_commands() {
+    local commands="apply create list revert rm"
+    COMPREPLY=($(compgen -W "$commands" -- $cur))
+}
+
+__git_patch__show_list_options() {
+    local cur=$1
+    local _words="${@:2}"
+    local options="--applied --not-applied"
+    if [[ $cur == -* ]]; then
+        if [[ " ${words[*]} " =~ " --applied " ]] || [[ " ${words[*]} " =~ " --not-applied " ]]; then
+            COMPREPLY=($(compgen -W "" -- $cur))
+        else
+            COMPREPLY=($(compgen -W "$options" -- $cur))
+        fi
+    fi
+}
+
+__git_patch__show_create_options() {
+    local prev=$1
+    local cur=$2
+    local _words="${@:3}"
+    local options=("--no-apply" "--name")
+    local available_options=()
+    if [[ $prev != '--name' ]]; then
+        for option in "${options[@]}"; do
+            if ! [[ " ${words[*]} " =~ " $option " ]]; then
+                available_options=(${available_options[@]} $option)
+            fi
+        done
+    fi
+    local av_opts="${available_options[@]}"
+    COMPREPLY=($(compgen -W "$av_opts" -- $cur))
+}
+
+__git_patch__show_appliable_patches() {
+    local root_dir=$(__git_patch__get_root_dir)
+    local patches_dir="$root_dir/.git/patches"
+    local applied_patches_dir="$patches_dir/applied.d"
+    local cur=$1
+    local _words="${@:1}"
+    local patch_names=${_words#*apply}
+    if [ "$(ls -A $applied_patches_dir 2>/dev/null)" ]; then
+        local applied_patches=$(ls $applied_patches_dir)
+        COMPREPLY=($(compgen -W "$(__git_patch__ls_only_files $patches_dir | __git_patch__exclude $applied_patches $patch_names)" -- $cur))
+    else
+        if [ -z "${patch_names// /}" ]; then
+            COMPREPLY=($(compgen -W "$(__git_patch__ls_only_files $patches_dir)" -- $cur))
+        else
+            COMPREPLY=($(compgen -W "$(__git_patch__ls_only_files $patches_dir | __git_patch__exclude $patch_names)" -- $cur))
+        fi
+    fi
+}
+
+__git_patch__show_revertable_patches() {
+    local root_dir=$(__git_patch__get_root_dir)
+    local patches_dir="$root_dir/.git/patches"
+    local applied_patches_dir="$patches_dir/applied.d"
+    local cur=$1
+    local _words="${@:1}"
+    local patch_names=${_words#*revert}
+    if [ -z "${patch_names// /}" ]; then
+        COMPREPLY=($(compgen -W "$(__git_patch__ls_only_files $applied_patches_dir)" -- $cur))
+    else
+        COMPREPLY=($(compgen -W "$(__git_patch__ls_only_files $applied_patches_dir | __git_patch__exclude $patch_names)" -- $cur))
+    fi
+}
+
+
+__git_patch__show_removable_patches() {
+    local root_dir=$(__git_patch__get_root_dir)
+    local patches_dir="$root_dir/.git/patches"
+    local cur=$1
+    local _words="${@:1}"
+    local patch_names=${_words#*rm}
+    if [ -z "${patch_names// /}" ]; then
+        COMPREPLY=($(compgen -W "$(__git_patch__ls_only_files $patches_dir)" -- $cur))
+    else
+        COMPREPLY=($(compgen -W "$(__git_patch__ls_only_files $patches_dir | __git_patch__exclude $patch_names)" -- $cur))
+    fi
+}
+
+_git_patch() {
+    local cur prev words cword split
+    _init_completion -s || return
+
+    if [[ $prev == 'patch' ]]; then
+        __git_patch__show_commands
+    elif [[ " ${words[*]} " =~ " list " ]]; then
+        __git_patch__show_list_options "${cur:-}" "${words[@]}"
+    elif [[ " ${words[*]} " =~ " create " ]]; then
+        __git_patch__show_create_options $prev "${cur:-}" "${words[@]}"
+    elif [[ " ${words[*]} " =~ " apply " ]]; then
+        __git_patch__show_appliable_patches "${cur:-}" "${words[@]}"
+    elif [[ " ${words[*]} " =~ " revert " ]]; then
+        __git_patch__show_revertable_patches "${cur:-}" "${words[@]}"
+    elif [[ " ${words[*]} " =~ " rm " ]]; then
+        __git_patch__show_removable_patches "${cur:-}" "${words[@]}"
+    fi
+}
+
+complete -F _git_patch git-patch
