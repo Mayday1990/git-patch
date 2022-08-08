@@ -2,6 +2,10 @@ __git_patch__get_root_dir() {
     git rev-parse --show-toplevel
 }
 
+__git_patch__user_has_perms(){
+    git rev-parse --show-toplevel > /dev/null 2>&1
+}
+
 __git_patch__ls_only_files() {
     ls -p $1 2>/dev/null | grep -v /
 }
@@ -34,12 +38,14 @@ __git_patch__show_create_options() {
     local _words="${@:3}"
     local options=("--no-apply" "--name")
     local available_options=()
-    if [[ $prev != '--name' ]]; then
-        for option in "${options[@]}"; do
-            if ! [[ " ${words[*]} " =~ " $option " ]]; then
-                available_options=(${available_options[@]} $option)
-            fi
-        done
+    if [[ $cur == -* ]]; then
+        if [[ $prev != '--name' ]]; then
+            for option in "${options[@]}"; do
+                if ! [[ " ${words[*]} " =~ " $option " ]]; then
+                    available_options=(${available_options[@]} $option)
+                fi
+            done
+        fi
     fi
     local av_opts="${available_options[@]}"
     COMPREPLY=($(compgen -W "$av_opts" -- $cur))
@@ -93,21 +99,23 @@ __git_patch__show_removable_patches() {
 }
 
 _git_patch() {
-    local cur prev words cword split
-    _init_completion -s || return
-
-    if [[ $prev == 'patch' ]]; then
-        __git_patch__show_commands
-    elif [[ " ${words[*]} " =~ " list " ]]; then
-        __git_patch__show_list_options "${cur:-}" "${words[@]}"
-    elif [[ " ${words[*]} " =~ " create " ]]; then
-        __git_patch__show_create_options $prev "${cur:-}" "${words[@]}"
-    elif [[ " ${words[*]} " =~ " apply " ]]; then
-        __git_patch__show_appliable_patches "${cur:-}" "${words[@]}"
-    elif [[ " ${words[*]} " =~ " revert " ]]; then
-        __git_patch__show_revertable_patches "${cur:-}" "${words[@]}"
-    elif [[ " ${words[*]} " =~ " rm " ]]; then
-        __git_patch__show_removable_patches "${cur:-}" "${words[@]}"
+    __git_patch__user_has_perms
+    if [ $? -eq 0 ]; then
+        local cur prev words cword split
+        _init_completion -s || return
+        if [[ $prev == 'patch' ]]; then
+            __git_patch__show_commands
+        elif [[ " ${words[*]} " =~ " list " ]]; then
+            __git_patch__show_list_options "${cur:-}" "${words[@]}"
+        elif [[ " ${words[*]} " =~ " create " ]]; then
+            __git_patch__show_create_options $prev "${cur:-}" "${words[@]}"
+        elif [[ " ${words[*]} " =~ " apply " ]]; then
+            __git_patch__show_appliable_patches "${cur:-}" "${words[@]}"
+        elif [[ " ${words[*]} " =~ " revert " ]]; then
+            __git_patch__show_revertable_patches "${cur:-}" "${words[@]}"
+        elif [[ " ${words[*]} " =~ " rm " ]]; then
+            __git_patch__show_removable_patches "${cur:-}" "${words[@]}"
+        fi
     fi
 }
 
